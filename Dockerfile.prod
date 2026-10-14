@@ -1,0 +1,8 @@
+# CI/CD 流水线专用:GitHub Actions 已构建好 jar 并传到服务器,这里只做轻量拼装。
+# 手动全量构建(前端+后端)仍用根目录的 Dockerfile: docker compose build
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY app.jar app.jar
+ENV JAVA_OPTS="-Xms128m -Xmx256m"
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

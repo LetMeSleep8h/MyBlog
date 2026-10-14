@@ -5,6 +5,11 @@ on:
     branches: [main]      # push 到 main 自动构建并部署
   workflow_dispatch: {}   # 支持在 Actions 页面手动触发
 
+# 同一条流水线同时只跑一个:新 push 自动取消还在跑的旧部署,避免互相踩
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   APP_IMAGE: ghcr.io/letmesleep8h/myblog-app
 
@@ -49,30 +54,32 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      # GHCR 包默认是私有的,服务器没有 ghcr 凭据,所以由 CI 拉取后直传
-      - name: 从 GHCR 拉取镜像
+      # 镜像在 GHCR(私有),用 GITHUB_TOKEN 登录后取出来,只为拿到里面的 jar
+      - name: 从镜像中取出 jar
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker pull ${{ env.APP_IMAGE }}:${{ github.sha }}
+          id=$(docker create ${{ env.APP_IMAGE }}:${{ github.sha }})
+          docker cp $id:/app/app.jar ./app.jar
+          docker rm $id
+          ls -lh app.jar
 
-      - name: 镜像传输到服务器
+      # 只跨境传 ~60MB 的 jar(而非几百 MB 镜像),断点续传 + 保活防止卡死
+      - name: 传输构建产物
         run: |
-          docker save ${{ env.APP_IMAGE }}:${{ github.sha }} | gzip | \
-            ssh -i ~/.ssh/deploy_key ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
-            'gunzip | docker load && docker tag ${{ env.APP_IMAGE }}:${{ github.sha }} ${{ env.APP_IMAGE }}:latest'
+          rsync -zz --partial --append-verify --timeout=180 \
+            -e "ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=15" \
+            app.jar Dockerfile.prod docker-compose.yml \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/Blog/
 
-      - name: 重启服务
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
-            cd /opt/Blog
-            git fetch origin ${{ github.sha }}
-            git checkout -f ${{ github.sha }}
-            docker compose up -d --remove-orphans app
-            docker image prune -f
-            echo "=== 容器状态 ==="
-            docker compose ps
+      # 基础镜像层服务器上已有,本地拼装只要几秒
+      - name: 服务器拼镜像并重启
+        run: |
+          ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=15 \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            'cd /opt/Blog \
+             && docker build -f Dockerfile.prod -t blog-app:ci . \
+             && docker compose up -d --remove-orphans app \
+             && docker image prune -f \
+             && echo "=== 容器状态 ===" \
+             && docker compose ps'
