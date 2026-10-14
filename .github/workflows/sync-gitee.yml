@@ -1,0 +1,20 @@
+name: Sync to Gitee
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    name: 同步到 Gitee
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 拉全量历史,保证镜像完整
+
+      - name: Push to Gitee
+        run: |
+          git remote add gitee "https://Sleep8h:${{ secrets.GITEE_TOKEN }}@gitee.com/Sleep8h/MyBlog.git"
+          git push gitee main --force
