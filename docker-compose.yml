@@ -1,0 +1,47 @@
+# 一键上线: docker compose up -d --build
+# 首次会自动创建并初始化 MySQL(建表),需要先配好 .env(见 .env.example)
+services:
+  db:
+    image: mysql:8.0
+    container_name: blog-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: blog
+      MYSQL_USER: blog
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql          # 数据持久化,删容器不丢数据
+      - ./sql:/docker-entrypoint-initdb.d:ro   # 首次启动自动建表
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    # CI/CD: GitHub Actions 构建好镜像推到 GHCR 并加载到服务器;
+    # 本地开发仍可用 docker compose build 从源码构建(两个方式共存)
+    image: ghcr.io/letmesleep8h/myblog-app:latest
+    build: .
+    container_name: blog-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      # 后端连的是 compose 里的 db 容器(服务名 db),不是 localhost
+      DB_URL: jdbc:mysql://db:3306/blog?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      DB_USERNAME: blog
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      # 管理后台口令(发布文章要用的),务必改掉默认值
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:

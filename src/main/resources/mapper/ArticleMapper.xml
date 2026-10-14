@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.eighthours.blog.mapper.ArticleMapper">
+
+    <insert id="insertArticle">
+        INSERT INTO article (title, content, article_time)
+        VALUES (#{title}, #{content}, NOW())
+    </insert>
+
+    <select id="selectAll" resultType="com.eighthours.blog.entity.Article">
+        SELECT id, title, content, article_time
+        FROM article
+        WHERE is_delete = 0
+        ORDER BY article_time DESC
+    </select>
+
+</mapper>
