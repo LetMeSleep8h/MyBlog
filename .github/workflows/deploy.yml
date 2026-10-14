@@ -47,6 +47,8 @@ jobs:
     needs: build-push
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4   # deploy 是独立环境,需要检出仓库拿到 Dockerfile.prod / compose
+
       - name: 配置 SSH
         run: |
           mkdir -p ~/.ssh
